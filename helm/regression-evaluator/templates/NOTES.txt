@@ -1,0 +1,7 @@
+regression-evaluator Job "{{ include "regression-evaluator.fullname" . }}" has been submitted to namespace {{ .Release.Namespace }}.
+
+Check status:
+  kubectl get job/{{ include "regression-evaluator.fullname" . }} -n {{ .Release.Namespace }}
+
+Follow logs:
+  kubectl logs -f job/{{ include "regression-evaluator.fullname" . }} -n {{ .Release.Namespace }}

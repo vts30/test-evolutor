@@ -1,0 +1,56 @@
+image:
+  repository: ""        # e.g. registry.example.com/regression-evaluator
+  tag: "latest"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Connection details for an existing PostgreSQL instance (this chart does not deploy a database).
+db:
+  host: ""
+  port: 5432
+  name: perfdb
+  user: perfuser
+  # Plaintext password (only use for local/dev testing - creates a Secret containing it).
+  password: ""
+  # Set to use a Secret that already exists in the cluster instead of `password` above.
+  # Must contain a key matching existingSecretPasswordKey.
+  existingSecret: ""
+  existingSecretPasswordKey: password
+
+# regression-evaluator CLI options (mirrors the `report-db` service in docker-compose.yaml)
+job:
+  currentRun: ""               # required: UUID of the run to evaluate
+  baselineRun: ""              # optional: pin a specific baseline run UUID, overrides baselineStrategy
+  baselineStrategy: latest     # latest | golden (ignored if baselineRun is set)
+  reporters:
+    - html
+  outputPath: /output/perf-report.html
+  releaseGate: true
+  enableClustering: true
+  logLevel: INFO
+
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+
+# SLO config file mounted at /config/slo.yaml and passed via --slo-config.
+sloConfig:
+  enabled: false
+  # Inline content for examples/slo.yaml - rendered into a ConfigMap when existingConfigMap is unset.
+  content: ""
+  # Use a pre-existing ConfigMap instead of `content`. Must contain a key matching `key`.
+  existingConfigMap: ""
+  key: slo.yaml
+
+# Optional PVC to persist the report output (e.g. perf-report.html) beyond the Job's lifetime.
+output:
+  persistence:
+    enabled: false
+    existingClaim: ""
+    mountPath: /output
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

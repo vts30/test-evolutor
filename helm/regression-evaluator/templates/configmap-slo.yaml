@@ -1,0 +1,11 @@
+{{- if and .Values.sloConfig.enabled (not .Values.sloConfig.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "regression-evaluator.fullname" . }}-slo
+  labels:
+    {{- include "regression-evaluator.labels" . | nindent 4 }}
+data:
+  {{ .Values.sloConfig.key }}: |
+    {{- .Values.sloConfig.content | nindent 4 }}
+{{- end }}

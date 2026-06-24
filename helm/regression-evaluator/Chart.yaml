@@ -1,0 +1,6 @@
+apiVersion: v2
+name: regression-evaluator
+description: Runs regression-evaluator as a one-off Kubernetes Job against an existing PostgreSQL database
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

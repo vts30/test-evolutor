@@ -1,0 +1,106 @@
+{{- $reporters := .Values.job.reporters | join " " }}
+{{- $sloConfigMapName := .Values.sloConfig.existingConfigMap | default (printf "%s-slo" (include "regression-evaluator.fullname" .)) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "regression-evaluator.fullname" . }}
+  labels:
+    {{- include "regression-evaluator.labels" . | nindent 4 }}
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "regression-evaluator.labels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: regression-evaluator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - >-
+              exec regression-evaluator
+              --db-uri "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+              --current-run {{ .Values.job.currentRun | quote }}
+              {{- if .Values.job.baselineRun }}
+              --baseline-run {{ .Values.job.baselineRun | quote }}
+              {{- else }}
+              --baseline-strategy {{ .Values.job.baselineStrategy | quote }}
+              {{- end }}
+              {{- if .Values.sloConfig.enabled }}
+              --slo-config /config/slo.yaml
+              {{- end }}
+              --reporters {{ $reporters }}
+              {{- if .Values.job.outputPath }}
+              --output {{ .Values.job.outputPath }}
+              {{- end }}
+              {{- if .Values.job.releaseGate }}
+              --release-gate
+              {{- end }}
+              {{- if .Values.job.enableClustering }}
+              --enable-clustering
+              {{- end }}
+              --log-level {{ .Values.job.logLevel }}
+          env:
+            - name: DB_HOST
+              value: {{ .Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.db.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.db.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "regression-evaluator.secretName" . }}
+                  key: {{ .Values.db.existingSecretPasswordKey }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.sloConfig.enabled }}
+            - name: slo-config
+              mountPath: /config
+              readOnly: true
+            {{- end }}
+            {{- if .Values.output.persistence.enabled }}
+            - name: output
+              mountPath: {{ .Values.output.persistence.mountPath }}
+            {{- end }}
+      volumes:
+        {{- if .Values.sloConfig.enabled }}
+        - name: slo-config
+          configMap:
+            name: {{ $sloConfigMapName }}
+        {{- end }}
+        {{- if .Values.output.persistence.enabled }}
+        - name: output
+          persistentVolumeClaim:
+            claimName: {{ .Values.output.persistence.existingClaim }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
