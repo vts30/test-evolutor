@@ -16,6 +16,7 @@ pipeline {
         string(name: 'DB_PORT', defaultValue: '5432', description: 'PostgreSQL port')
         string(name: 'DB_NAME', defaultValue: 'perfdb', description: 'PostgreSQL database name')
         string(name: 'DB_USER', defaultValue: 'perfuser', description: 'PostgreSQL user')
+        string(name: 'DB_SCHEMA', defaultValue: '', description: 'PostgreSQL schema (search_path). Leave blank to use the role default.')
         string(name: 'DB_EXISTING_SECRET', defaultValue: '', description: 'Name of an existing Secret in NAMESPACE holding the DB password (key: password). Leave blank to supply DB_PASSWORD_CREDENTIAL_ID instead.')
         string(name: 'DB_PASSWORD_CREDENTIAL_ID', defaultValue: '', description: 'Jenkins "Secret text" credential ID holding the DB password. Ignored if DB_EXISTING_SECRET is set.')
 
@@ -26,6 +27,10 @@ pipeline {
     environment {
         RELEASE_NAME = "regression-evaluator-${env.BUILD_NUMBER}"
         CHART_PATH   = "helm/regression-evaluator"
+        // Must match helm/regression-evaluator/values.yaml job.outputPath and job.controlDir
+        // (override both here and via --set if you change them in values.yaml).
+        REPORT_PATH  = "/output/perf-report.html"
+        CONTROL_DIR  = "/tmp/regression-evaluator-control"
     }
 
     stages {
@@ -47,6 +52,9 @@ pipeline {
                     script {
                         def dbSecretArgs = ''
                         def valuesArgs = params.VALUES_FILE?.trim() ? "-f ${params.VALUES_FILE}" : ''
+                        // No --wait: the Job intentionally keeps its pod alive (sleeping) after
+                        // regression-evaluator exits so "Fetch Report" below can kubectl cp out
+                        // of it. --wait would block here until that sleep elapses.
                         if (params.DB_EXISTING_SECRET?.trim()) {
                             dbSecretArgs = "--set db.existingSecret=${params.DB_EXISTING_SECRET}"
                             sh """
@@ -64,8 +72,8 @@ pipeline {
                                 --set db.port=${params.DB_PORT} \\
                                 --set db.name=${params.DB_NAME} \\
                                 --set db.user=${params.DB_USER} \\
-                                ${dbSecretArgs} \\
-                                --wait --timeout 10m
+                                --set db.schema=${params.DB_SCHEMA} \\
+                                ${dbSecretArgs}
                             """
                         } else {
                             withCredentials([string(credentialsId: params.DB_PASSWORD_CREDENTIAL_ID, variable: 'DB_PASSWORD')]) {
@@ -84,10 +92,48 @@ pipeline {
                                     --set db.port=${params.DB_PORT} \\
                                     --set db.name=${params.DB_NAME} \\
                                     --set db.user=${params.DB_USER} \\
-                                    --set-string db.password='${DB_PASSWORD}' \\
-                                    --wait --timeout 10m
+                                    --set db.schema=${params.DB_SCHEMA} \\
+                                    --set-string db.password='${DB_PASSWORD}'
                                 """
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Fetch Report') {
+            steps {
+                withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIAL_ID, variable: 'KUBECONFIG')]) {
+                    script {
+                        timeout(time: 10, unit: 'MINUTES') {
+                            sh """
+                              set -e
+                              echo "Waiting for pod to be scheduled..."
+                              until POD=\$(kubectl get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
+                                sleep 2
+                              done
+                              echo "\$POD" > .pod_name
+                              echo "Pod: \$POD"
+
+                              echo "Waiting for regression-evaluator to finish (done marker at ${CONTROL_DIR})..."
+                              until kubectl exec "\$POD" -n ${params.NAMESPACE} -- test -f ${CONTROL_DIR}/done 2>/dev/null; do
+                                sleep 3
+                              done
+                            """
+                        }
+
+                        def pod = readFile('.pod_name').trim()
+                        sh """
+                          kubectl cp ${params.NAMESPACE}/${pod}:${REPORT_PATH} ./perf-report.html || true
+                          kubectl exec ${pod} -n ${params.NAMESPACE} -- cat ${CONTROL_DIR}/exitcode > .exitcode
+                        """
+                        archiveArtifacts artifacts: 'perf-report.html', allowEmptyArchive: true
+
+                        def rc = readFile('.exitcode').trim()
+                        echo "regression-evaluator exit code: ${rc}"
+                        if (rc != '0') {
+                            error("regression-evaluator exited with code ${rc} (regression detected or run error) - see perf-report.html and regression-evaluator.log")
                         }
                     }
                 }
@@ -97,7 +143,7 @@ pipeline {
 
     post {
         always {
-            // Runs even if "Deploy Job" failed (e.g. release-gate caught a regression),
+            // Runs even if "Fetch Report" failed (e.g. release-gate caught a regression),
             // which is the case where the logs matter most.
             withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIAL_ID, variable: 'KUBECONFIG')]) {
                 sh "kubectl logs job/${RELEASE_NAME} -n ${params.NAMESPACE} > regression-evaluator.log 2>&1 || true"

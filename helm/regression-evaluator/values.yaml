@@ -1,5 +1,5 @@
 image:
-  repository: ""        # e.g. registry.example.com/regression-evaluator
+  repository: "CHANGEME/regression-evaluator"   # replace with your pushed image, e.g. image-registry.openshift-image-registry.svc:5000/<namespace>/regression-evaluator
   tag: "latest"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
@@ -16,10 +16,13 @@ db:
   # Must contain a key matching existingSecretPasswordKey.
   existingSecret: ""
   existingSecretPasswordKey: password
+  # Optional PostgreSQL schema. When set, appended as ?options=-c search_path=<schema> on the
+  # connection URI so all queries target that schema instead of the role's default search_path.
+  schema: ""
 
 # regression-evaluator CLI options (mirrors the `report-db` service in docker-compose.yaml)
 job:
-  currentRun: ""               # required: UUID of the run to evaluate
+  currentRun: "CHANGEME"       # replace with the UUID of the run to evaluate (your already-loaded DB data)
   baselineRun: ""              # optional: pin a specific baseline run UUID, overrides baselineStrategy
   baselineStrategy: latest     # latest | golden (ignored if baselineRun is set)
   reporters:
@@ -32,6 +35,13 @@ job:
   backoffLimit: 0
   activeDeadlineSeconds: 600
   ttlSecondsAfterFinished: 3600
+
+  # After regression-evaluator exits, the container writes its exit code and a "done" marker
+  # to controlDir, then sleeps for copyGraceSeconds before actually exiting. This gives a
+  # CI pipeline (e.g. Jenkins) a window to `kubectl exec`/`kubectl cp` the report out of the
+  # still-running pod -- once the container exits, the pod can no longer be exec'd/cp'd into.
+  controlDir: /tmp/regression-evaluator-control
+  copyGraceSeconds: 120
 
 # SLO config file mounted at /config/slo.yaml and passed via --slo-config.
 sloConfig:
@@ -49,7 +59,13 @@ output:
     existingClaim: ""
     mountPath: /output
 
-resources: {}
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
 nodeSelector: {}
 tolerations: []
 affinity: {}

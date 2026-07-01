@@ -1,5 +1,25 @@
 {{- $reporters := .Values.job.reporters | join " " }}
 {{- $sloConfigMapName := .Values.sloConfig.existingConfigMap | default (printf "%s-slo" (include "regression-evaluator.fullname" .)) }}
+{{- $cmd := printf "regression-evaluator --db-uri \"${DB_URI}\" --current-run %s" (.Values.job.currentRun | quote) }}
+{{- if .Values.job.baselineRun }}
+{{- $cmd = printf "%s --baseline-run %s" $cmd (.Values.job.baselineRun | quote) }}
+{{- else }}
+{{- $cmd = printf "%s --baseline-strategy %s" $cmd (.Values.job.baselineStrategy | quote) }}
+{{- end }}
+{{- if .Values.sloConfig.enabled }}
+{{- $cmd = printf "%s --slo-config /config/slo.yaml" $cmd }}
+{{- end }}
+{{- $cmd = printf "%s --reporters %s" $cmd $reporters }}
+{{- if .Values.job.outputPath }}
+{{- $cmd = printf "%s --output %s" $cmd .Values.job.outputPath }}
+{{- end }}
+{{- if .Values.job.releaseGate }}
+{{- $cmd = printf "%s --release-gate" $cmd }}
+{{- end }}
+{{- if .Values.job.enableClustering }}
+{{- $cmd = printf "%s --enable-clustering" $cmd }}
+{{- end }}
+{{- $cmd = printf "%s --log-level %s" $cmd .Values.job.logLevel }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -30,29 +50,24 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
-            - >-
-              exec regression-evaluator
-              --db-uri "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
-              --current-run {{ .Values.job.currentRun | quote }}
-              {{- if .Values.job.baselineRun }}
-              --baseline-run {{ .Values.job.baselineRun | quote }}
-              {{- else }}
-              --baseline-strategy {{ .Values.job.baselineStrategy | quote }}
-              {{- end }}
-              {{- if .Values.sloConfig.enabled }}
-              --slo-config /config/slo.yaml
-              {{- end }}
-              --reporters {{ $reporters }}
+            - |
+              set +e
+              DB_URI="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+              if [ -n "${DB_SCHEMA:-}" ]; then
+                DB_URI="${DB_URI}?options=-c%20search_path%3D${DB_SCHEMA}"
+              fi
               {{- if .Values.job.outputPath }}
-              --output {{ .Values.job.outputPath }}
+              mkdir -p "$(dirname '{{ .Values.job.outputPath }}')"
               {{- end }}
-              {{- if .Values.job.releaseGate }}
-              --release-gate
-              {{- end }}
-              {{- if .Values.job.enableClustering }}
-              --enable-clustering
-              {{- end }}
-              --log-level {{ .Values.job.logLevel }}
+              {{ $cmd }}
+              rc=$?
+              set -e
+              mkdir -p {{ .Values.job.controlDir }}
+              echo $rc > {{ .Values.job.controlDir }}/exitcode
+              touch {{ .Values.job.controlDir }}/done
+              echo "regression-evaluator exited $rc; sleeping {{ .Values.job.copyGraceSeconds }}s so the report can be copied out before the pod terminates"
+              sleep {{ .Values.job.copyGraceSeconds }}
+              exit $rc
           env:
             - name: DB_HOST
               value: {{ .Values.db.host | quote }}
@@ -62,6 +77,8 @@ spec:
               value: {{ .Values.db.name | quote }}
             - name: DB_USER
               value: {{ .Values.db.user | quote }}
+            - name: DB_SCHEMA
+              value: {{ .Values.db.schema | quote }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -71,6 +88,7 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if or .Values.sloConfig.enabled .Values.output.persistence.enabled }}
           volumeMounts:
             {{- if .Values.sloConfig.enabled }}
             - name: slo-config
@@ -81,6 +99,8 @@ spec:
             - name: output
               mountPath: {{ .Values.output.persistence.mountPath }}
             {{- end }}
+          {{- end }}
+      {{- if or .Values.sloConfig.enabled .Values.output.persistence.enabled }}
       volumes:
         {{- if .Values.sloConfig.enabled }}
         - name: slo-config
@@ -92,6 +112,7 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.output.persistence.existingClaim }}
         {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
