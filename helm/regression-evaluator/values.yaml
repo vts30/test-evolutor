@@ -40,7 +40,7 @@ job:
   # to controlDir, then sleeps for copyGraceSeconds before actually exiting. This gives a
   # CI pipeline (e.g. Jenkins) a window to `kubectl exec`/`kubectl cp` the report out of the
   # still-running pod -- once the container exits, the pod can no longer be exec'd/cp'd into.
-  controlDir: /tmp/regression-evaluator-control
+  controlDir: /tmp
   copyGraceSeconds: 120
 
 # SLO config file mounted at /config/slo.yaml and passed via --slo-config.

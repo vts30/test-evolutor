@@ -63,9 +63,6 @@ spec:
               {{ $cmd }}
               rc=$?
               set -e
-              {{- if .Values.job.controlDir }}
-              mkdir -p {{ .Values.job.controlDir }}
-              {{- end }}
               echo $rc > {{ .Values.job.controlDir }}/exitcode
               touch {{ .Values.job.controlDir }}/done
               echo "regression-evaluator exited $rc; sleeping {{ .Values.job.copyGraceSeconds }}s so the report can be copied out before the pod terminates"
