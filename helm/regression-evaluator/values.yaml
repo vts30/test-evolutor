@@ -27,7 +27,7 @@ job:
   baselineStrategy: latest     # latest | golden (ignored if baselineRun is set)
   reporters:
     - html
-  outputPath: /output/perf-report.html
+  outputPath: /tmp/perf-report.html
   releaseGate: true
   enableClustering: true
   logLevel: INFO

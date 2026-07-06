@@ -57,12 +57,15 @@ spec:
                 DB_URI="${DB_URI}?options=-c%20search_path%3D${DB_SCHEMA}"
               fi
               {{- if .Values.job.outputPath }}
-              mkdir -p "$(dirname '{{ .Values.job.outputPath }}')"
+              OUTPUT_DIR="$(dirname '{{ .Values.job.outputPath }}')"
+              [ -n "$OUTPUT_DIR" ] && mkdir -p "$OUTPUT_DIR"
               {{- end }}
               {{ $cmd }}
               rc=$?
               set -e
+              {{- if .Values.job.controlDir }}
               mkdir -p {{ .Values.job.controlDir }}
+              {{- end }}
               echo $rc > {{ .Values.job.controlDir }}/exitcode
               touch {{ .Values.job.controlDir }}/done
               echo "regression-evaluator exited $rc; sleeping {{ .Values.job.copyGraceSeconds }}s so the report can be copied out before the pod terminates"

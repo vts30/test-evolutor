@@ -29,7 +29,7 @@ pipeline {
         CHART_PATH   = "helm/regression-evaluator"
         // Must match helm/regression-evaluator/values.yaml job.outputPath and job.controlDir
         // (override both here and via --set if you change them in values.yaml).
-        REPORT_PATH  = "/output/perf-report.html"
+        REPORT_PATH  = "/tmp/perf-report.html"
         CONTROL_DIR  = "/tmp/regression-evaluator-control"
     }
 
