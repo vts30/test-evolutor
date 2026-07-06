@@ -56,10 +56,6 @@ spec:
               if [ -n "${DB_SCHEMA:-}" ]; then
                 DB_URI="${DB_URI}?options=-c%20search_path%3D${DB_SCHEMA}"
               fi
-              {{- if .Values.job.outputPath }}
-              OUTPUT_DIR="$(dirname '{{ .Values.job.outputPath }}')"
-              [ -n "$OUTPUT_DIR" ] && mkdir -p "$OUTPUT_DIR"
-              {{- end }}
               {{ $cmd }}
               rc=$?
               set -e
