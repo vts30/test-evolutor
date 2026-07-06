@@ -11,6 +11,7 @@ pipeline {
         choice(name: 'BASELINE_STRATEGY', choices: ['latest', 'golden'], description: 'Baseline selection strategy')
         booleanParam(name: 'RELEASE_GATE', defaultValue: true, description: 'Fail the job (and this build) on regression')
         booleanParam(name: 'ENABLE_CLUSTERING', defaultValue: true, description: 'Enable clustering analysis')
+        booleanParam(name: 'ENABLE_SLO_CONFIG', defaultValue: false, description: 'Mount slo.yaml from the chart directory and pass it via --slo-config')
 
         string(name: 'DB_HOST', defaultValue: '', description: 'PostgreSQL host')
         string(name: 'DB_PORT', defaultValue: '5432', description: 'PostgreSQL port')
@@ -52,6 +53,7 @@ pipeline {
                     script {
                         def dbSecretArgs = ''
                         def valuesArgs = params.VALUES_FILE?.trim() ? "-f ${params.VALUES_FILE}" : ''
+                        def sloArgs = params.ENABLE_SLO_CONFIG ? "--set sloConfig.enabled=true --set-file sloConfig.content=${CHART_PATH}/slo.yaml" : ''
                         // No --wait: the Job intentionally keeps its pod alive (sleeping) after
                         // regression-evaluator exits so "Fetch Report" below can kubectl cp out
                         // of it. --wait would block here until that sleep elapses.
@@ -61,6 +63,7 @@ pipeline {
                               helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} \\
                                 --namespace ${params.NAMESPACE} --create-namespace \\
                                 ${valuesArgs} \\
+                                ${sloArgs} \\
                                 --set image.repository=${params.IMAGE_REPOSITORY} \\
                                 --set image.tag=${params.IMAGE_TAG} \\
                                 --set job.currentRun=${params.CURRENT_RUN} \\
@@ -81,6 +84,7 @@ pipeline {
                                   helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} \\
                                     --namespace ${params.NAMESPACE} --create-namespace \\
                                     ${valuesArgs} \\
+                                    ${sloArgs} \\
                                     --set image.repository=${params.IMAGE_REPOSITORY} \\
                                     --set image.tag=${params.IMAGE_TAG} \\
                                     --set job.currentRun=${params.CURRENT_RUN} \\
