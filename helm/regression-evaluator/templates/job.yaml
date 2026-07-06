@@ -27,9 +27,9 @@ metadata:
   labels:
     {{- include "regression-evaluator.labels" . | nindent 4 }}
 spec:
-  backoffLimit: {{ .Values.job.backoffLimit }}
-  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
-  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.job.backoffLimit | default 0 }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds | default 600 }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished | default 3600 }}
   template:
     metadata:
       labels:
@@ -59,10 +59,10 @@ spec:
               {{ $cmd }}
               rc=$?
               set -e
-              echo $rc > {{ .Values.job.controlDir }}/exitcode
-              touch {{ .Values.job.controlDir }}/done
-              echo "regression-evaluator exited $rc; sleeping {{ .Values.job.copyGraceSeconds }}s so the report can be copied out before the pod terminates"
-              sleep {{ .Values.job.copyGraceSeconds }}
+              echo $rc > {{ .Values.job.controlDir | default "/tmp" }}/exitcode
+              touch {{ .Values.job.controlDir | default "/tmp" }}/done
+              echo "regression-evaluator exited $rc; sleeping {{ .Values.job.copyGraceSeconds | default 120 }}s so the report can be copied out before the pod terminates"
+              sleep {{ .Values.job.copyGraceSeconds | default 120 }}
               exit $rc
           env:
             - name: DB_HOST
