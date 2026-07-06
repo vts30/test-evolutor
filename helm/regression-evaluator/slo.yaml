@@ -1,0 +1,110 @@
+# SLO targets for SERVALX browser performance tests
+# Two test suites: login-esm (full ESM app) and login-and-check-app (login flow)
+
+margin_of_safety: 0.80
+default_error_budget_pct: 5.0
+rolling_window_runs: 10
+
+category_defaults:
+  latency:
+    comparison: p95
+    direction: lower_is_better
+    error_budget_pct: 5.0
+    production_slo: 1000.0
+  throughput:
+    comparison: mean
+    direction: higher_is_better
+    error_budget_pct: 3.0
+  error_rate:
+    comparison: mean
+    direction: lower_is_better
+    error_budget_pct: 1.0
+  resource:
+    comparison: p95
+    direction: lower_is_better
+    error_budget_pct: 10.0
+
+# All metrics from perf-results.csv are HTTP response times -> latency
+patterns:
+  - match: ".*POST.*/xas/.*"
+    metric_type: latency
+  - match: ".*POST.*/doAuthentication.*"
+    metric_type: latency
+  - match: ".*GET.*/rest/.*"
+    metric_type: latency
+  - match: ".*GET.*\\.js$|.*GET.*\\.css$|.*GET.*\\.woff2?$"
+    metric_type: latency
+  - match: ".*GET.*\\.json$|.*GET.*\\.xml$"
+    metric_type: latency
+  - match: ".*"
+    metric_type: latency
+
+targets:
+  # Authentication endpoint: must respond within 500ms (p95)
+  "[login-esm] POST https://login.i8634.sys3.tb.rz.bankenit.de/nf/auth/doAuthentication.do":
+    production_slo: 500.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # XAS API calls (Mendix runtime): 300ms p95
+  "[login-esm] POST https://esm.i8634.sys3.tb.rz.bankenit.de:16613/xas/":
+    production_slo: 300.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # Login page initial load: 200ms p95
+  "[login-esm] GET https://login.i8634.sys3.tb.rz.bankenit.de/":
+    production_slo: 200.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # ESM app entry: 300ms p95
+  "[login-esm] GET https://esm.i8634.sys3.tb.rz.bankenit.de:16613/":
+    production_slo: 300.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # JWT login REST endpoint: 500ms p95
+  "[login-esm] GET https://esm.i8634.sys3.tb.rz.bankenit.de:16613/rest/jwtlogin/partner/v1/login":
+    production_slo: 500.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # User properties service: 300ms p95
+  "[login-esm] POST https://ps.i8634.sys3.tb.rz.bankenit.de:15699/wapgup/services/userproperties/get":
+    production_slo: 300.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # Mandator service: 300ms p95
+  "[login-esm] GET https://ps.i8634.sys3.tb.rz.bankenit.de:16699/wapmgv/services/v3/mandators/8634":
+    production_slo: 300.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # Password expiry check: 300ms p95
+  "[login-esm] GET https://ps.i8634.sys3.tb.rz.bankenit.de:16699/pba/authentication/rest/public/password/v1/expiry":
+    production_slo: 300.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  # Login-and-check-app authentication
+  "[login and check app] POST https://login.i8634.sys3.tb.rz.bankenit.de/nf/auth/doAuthentication.do":
+    production_slo: 500.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
+
+  "[login and check app] GET https://login.i8634.sys3.tb.rz.bankenit.de/":
+    production_slo: 200.0
+    metric_type: latency
+    comparison: p95
+    direction: lower_is_better
