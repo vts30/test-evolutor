@@ -105,17 +105,25 @@ pipeline {
                     timeout(time: 10, unit: 'MINUTES') {
                         sh """
                           set -e
-                          echo "=== Jobs in namespace ==="
-                          oc get jobs -n ${params.NAMESPACE} || true
-                          echo "=== Pods with labels ==="
-                          oc get pods -n ${params.NAMESPACE} --show-labels || true
+                          echo "=== Job details (events show why pod may not start) ==="
+                          sleep 3
+                          oc describe job/${RELEASE_NAME} -n ${params.NAMESPACE} || true
+                          echo "=== Resource quota ==="
+                          oc describe resourcequota -n ${params.NAMESPACE} || true
 
                           echo "Waiting for pod to be scheduled..."
+                          RETRIES=0
                           until POD=\$(oc get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
-                            sleep 2
+                            RETRIES=\$((RETRIES+1))
+                            if [ \$RETRIES -ge 30 ]; then
+                              echo "ERROR: pod not found after 30 retries. Current pods:"
+                              oc get pods -n ${params.NAMESPACE} --show-labels || true
+                              exit 1
+                            fi
+                            sleep 5
                           done
                           echo "\$POD" > .pod_name
-                          echo "Pod: \$POD"
+                          echo "Pod found: \$POD"
 
                           echo "Waiting for regression-evaluator to finish..."
                           until oc exec "\$POD" -n ${params.NAMESPACE} -- test -f ${CONTROL_DIR}/done 2>/dev/null; do
