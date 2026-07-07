@@ -76,7 +76,11 @@ pipeline {
                     if (params.DB_EXISTING_SECRET?.trim()) {
                         sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} | oc apply -n ${params.NAMESPACE} -f -"
                     } else {
-                        withCredentials([string(credentialsId: params.DB_PASSWORD_CREDENTIAL_ID, variable: 'DB_PASSWORD')]) {
+                        withCredentials([usernamePassword(
+                            credentialsId: params.DB_PASSWORD_CREDENTIAL_ID,
+                            usernameVariable: 'DB_CRED_USER',
+                            passwordVariable: 'DB_PASSWORD'
+                        )]) {
                             sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} --set-string db.password='${DB_PASSWORD}' | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
