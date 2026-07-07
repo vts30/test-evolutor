@@ -4,12 +4,12 @@ pipeline {
     parameters {
         string(name: 'IMAGE_REPOSITORY', defaultValue: '', description: 'Image repository, e.g. registry.example.com/regression-evaluator')
         string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Image tag to deploy')
-        string(name: 'NAMESPACE', defaultValue: 'default', description: 'Target Kubernetes namespace')
+        string(name: 'NAMESPACE', defaultValue: 'default', description: 'Target OpenShift namespace/project')
 
         string(name: 'CURRENT_RUN', defaultValue: '', description: 'UUID of the run to evaluate (--current-run)')
         string(name: 'BASELINE_RUN', defaultValue: '', description: 'Optional: pin a baseline run UUID, overrides BASELINE_STRATEGY')
         choice(name: 'BASELINE_STRATEGY', choices: ['latest', 'golden'], description: 'Baseline selection strategy')
-        booleanParam(name: 'RELEASE_GATE', defaultValue: true, description: 'Fail the job (and this build) on regression')
+        booleanParam(name: 'RELEASE_GATE', defaultValue: true, description: 'Fail the build on regression')
         booleanParam(name: 'ENABLE_CLUSTERING', defaultValue: true, description: 'Enable clustering analysis')
         booleanParam(name: 'ENABLE_SLO_CONFIG', defaultValue: false, description: 'Mount slo.yaml from the chart directory and pass it via --slo-config')
 
@@ -19,17 +19,16 @@ pipeline {
         string(name: 'DB_USER', defaultValue: 'perfuser', description: 'PostgreSQL user')
         string(name: 'DB_SCHEMA', defaultValue: '', description: 'PostgreSQL schema (search_path). Leave blank to use the role default.')
         string(name: 'DB_EXISTING_SECRET', defaultValue: '', description: 'Name of an existing Secret in NAMESPACE holding the DB password (key: password). Leave blank to supply DB_PASSWORD_CREDENTIAL_ID instead.')
-        string(name: 'DB_PASSWORD_CREDENTIAL_ID', defaultValue: '', description: 'Jenkins "Secret text" credential ID holding the DB password. Ignored if DB_EXISTING_SECRET is set.')
+        string(name: 'DB_PASSWORD_CREDENTIAL_ID', defaultValue: '', description: 'Jenkins "Secret text" credential ID for the DB password. Ignored if DB_EXISTING_SECRET is set.')
 
-        string(name: 'KUBECONFIG_CREDENTIAL_ID', defaultValue: 'kubeconfig', description: 'Jenkins "Secret file" credential ID for the target cluster kubeconfig')
-        string(name: 'VALUES_FILE', defaultValue: '', description: 'Optional path (relative to repo root) to an extra Helm values file, e.g. for sloConfig.content. Layered under the --set overrides below.')
+        string(name: 'KUBECONFIG_CREDENTIAL_ID', defaultValue: 'kubeconfig', description: 'Jenkins "Secret file" credential ID for the OpenShift kubeconfig')
+        string(name: 'VALUES_FILE', defaultValue: '', description: 'Optional path (relative to repo root) to an extra Helm values file.')
+        string(name: 'COPY_GRACE_SECONDS', defaultValue: '300', description: 'Seconds the pod sleeps after generating the report, giving Jenkins time to copy it out.')
     }
 
     environment {
         RELEASE_NAME = "regression-evaluator-${env.BUILD_NUMBER}"
         CHART_PATH   = "helm/regression-evaluator"
-        // Must match helm/regression-evaluator/values.yaml job.outputPath and job.controlDir
-        // (override both here and via --set if you change them in values.yaml).
         REPORT_PATH  = "/tmp/perf-report.html"
         CONTROL_DIR  = "/tmp"
     }
@@ -51,54 +50,34 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIAL_ID, variable: 'KUBECONFIG')]) {
                     script {
-                        def dbSecretArgs = ''
-                        def valuesArgs = params.VALUES_FILE?.trim() ? "-f ${params.VALUES_FILE}" : ''
-                        def sloArgs = params.ENABLE_SLO_CONFIG ? "--set sloConfig.enabled=true --set-file sloConfig.content=${CHART_PATH}/slo.yaml" : ''
-                        // No --wait: the Job intentionally keeps its pod alive (sleeping) after
-                        // regression-evaluator exits so "Fetch Report" below can kubectl cp out
-                        // of it. --wait would block here until that sleep elapses.
+                        def valuesArgs   = params.VALUES_FILE?.trim()          ? "-f ${params.VALUES_FILE}" : ''
+                        def sloArgs      = params.ENABLE_SLO_CONFIG            ? "--set sloConfig.enabled=true --set-file sloConfig.content=${CHART_PATH}/slo.yaml" : ''
+                        def dbSecretArgs = params.DB_EXISTING_SECRET?.trim()   ? "--set db.existingSecret=${params.DB_EXISTING_SECRET}" : ''
+
+                        def commonArgs = """
+                              ${valuesArgs} \\
+                              ${sloArgs} \\
+                              --set image.repository=${params.IMAGE_REPOSITORY} \\
+                              --set image.tag=${params.IMAGE_TAG} \\
+                              --set job.currentRun=${params.CURRENT_RUN} \\
+                              --set job.baselineRun=${params.BASELINE_RUN} \\
+                              --set job.baselineStrategy=${params.BASELINE_STRATEGY} \\
+                              --set job.releaseGate=${params.RELEASE_GATE} \\
+                              --set job.enableClustering=${params.ENABLE_CLUSTERING} \\
+                              --set job.copyGraceSeconds=${params.COPY_GRACE_SECONDS} \\
+                              --set db.host=${params.DB_HOST} \\
+                              --set db.port=${params.DB_PORT} \\
+                              --set db.name=${params.DB_NAME} \\
+                              --set db.user=${params.DB_USER} \\
+                              --set db.schema=${params.DB_SCHEMA} \\
+                              ${dbSecretArgs}
+                        """
+
                         if (params.DB_EXISTING_SECRET?.trim()) {
-                            dbSecretArgs = "--set db.existingSecret=${params.DB_EXISTING_SECRET}"
-                            sh """
-                              helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} \\
-                                --namespace ${params.NAMESPACE} --create-namespace \\
-                                ${valuesArgs} \\
-                                ${sloArgs} \\
-                                --set image.repository=${params.IMAGE_REPOSITORY} \\
-                                --set image.tag=${params.IMAGE_TAG} \\
-                                --set job.currentRun=${params.CURRENT_RUN} \\
-                                --set job.baselineRun=${params.BASELINE_RUN} \\
-                                --set job.baselineStrategy=${params.BASELINE_STRATEGY} \\
-                                --set job.releaseGate=${params.RELEASE_GATE} \\
-                                --set job.enableClustering=${params.ENABLE_CLUSTERING} \\
-                                --set db.host=${params.DB_HOST} \\
-                                --set db.port=${params.DB_PORT} \\
-                                --set db.name=${params.DB_NAME} \\
-                                --set db.user=${params.DB_USER} \\
-                                --set db.schema=${params.DB_SCHEMA} \\
-                                ${dbSecretArgs}
-                            """
+                            sh "helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} --namespace ${params.NAMESPACE} ${commonArgs}"
                         } else {
                             withCredentials([string(credentialsId: params.DB_PASSWORD_CREDENTIAL_ID, variable: 'DB_PASSWORD')]) {
-                                sh """
-                                  helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} \\
-                                    --namespace ${params.NAMESPACE} --create-namespace \\
-                                    ${valuesArgs} \\
-                                    ${sloArgs} \\
-                                    --set image.repository=${params.IMAGE_REPOSITORY} \\
-                                    --set image.tag=${params.IMAGE_TAG} \\
-                                    --set job.currentRun=${params.CURRENT_RUN} \\
-                                    --set job.baselineRun=${params.BASELINE_RUN} \\
-                                    --set job.baselineStrategy=${params.BASELINE_STRATEGY} \\
-                                    --set job.releaseGate=${params.RELEASE_GATE} \\
-                                    --set job.enableClustering=${params.ENABLE_CLUSTERING} \\
-                                    --set db.host=${params.DB_HOST} \\
-                                    --set db.port=${params.DB_PORT} \\
-                                    --set db.name=${params.DB_NAME} \\
-                                    --set db.user=${params.DB_USER} \\
-                                    --set db.schema=${params.DB_SCHEMA} \\
-                                    --set-string db.password='${DB_PASSWORD}'
-                                """
+                                sh "helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} --namespace ${params.NAMESPACE} ${commonArgs} --set-string db.password='${DB_PASSWORD}'"
                             }
                         }
                     }
@@ -114,30 +93,31 @@ pipeline {
                             sh """
                               set -e
                               echo "Waiting for pod to be scheduled..."
-                              until POD=\$(kubectl get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
+                              until POD=\$(oc get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
                                 sleep 2
                               done
                               echo "\$POD" > .pod_name
                               echo "Pod: \$POD"
 
-                              echo "Waiting for regression-evaluator to finish (done marker at ${CONTROL_DIR})..."
-                              until kubectl exec "\$POD" -n ${params.NAMESPACE} -- test -f ${CONTROL_DIR}/done 2>/dev/null; do
+                              echo "Waiting for regression-evaluator to finish..."
+                              until oc exec "\$POD" -n ${params.NAMESPACE} -- test -f ${CONTROL_DIR}/done 2>/dev/null; do
                                 sleep 3
                               done
                             """
                         }
 
                         def pod = readFile('.pod_name').trim()
-                        sh """
-                          kubectl cp ${params.NAMESPACE}/${pod}:${REPORT_PATH} ./perf-report.html || true
-                          kubectl exec ${pod} -n ${params.NAMESPACE} -- cat ${CONTROL_DIR}/exitcode > .exitcode
-                        """
+
+                        // Use oc exec + cat instead of oc cp to avoid tar path-stripping issues
+                        sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${REPORT_PATH} > perf-report.html"
+                        sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${CONTROL_DIR}/exitcode > .exitcode"
+
                         archiveArtifacts artifacts: 'perf-report.html', allowEmptyArchive: true
 
                         def rc = readFile('.exitcode').trim()
                         echo "regression-evaluator exit code: ${rc}"
                         if (rc != '0') {
-                            error("regression-evaluator exited with code ${rc} (regression detected or run error) - see perf-report.html and regression-evaluator.log")
+                            error("regression-evaluator exited with code ${rc} — check perf-report.html and regression-evaluator.log for details")
                         }
                     }
                 }
@@ -147,10 +127,8 @@ pipeline {
 
     post {
         always {
-            // Runs even if "Fetch Report" failed (e.g. release-gate caught a regression),
-            // which is the case where the logs matter most.
             withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIAL_ID, variable: 'KUBECONFIG')]) {
-                sh "kubectl logs job/${RELEASE_NAME} -n ${params.NAMESPACE} > regression-evaluator.log 2>&1 || true"
+                sh "oc logs job/${RELEASE_NAME} -n ${params.NAMESPACE} > regression-evaluator.log 2>&1 || true"
                 archiveArtifacts artifacts: 'regression-evaluator.log', allowEmptyArchive: true
                 sh "helm uninstall ${RELEASE_NAME} -n ${params.NAMESPACE} || true"
             }
