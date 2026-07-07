@@ -29,7 +29,7 @@ job:
     - html
   outputPath: /tmp/perf-report.html
   releaseGate: true
-  enableClustering: true
+  enableClustering: false
   logLevel: INFO
 
   backoffLimit: 0
