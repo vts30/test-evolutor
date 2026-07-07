@@ -83,10 +83,10 @@ spec:
           resources:
             limits:
               cpu: {{ dig "limits" "cpu" "1" (.Values.resources | default dict) | quote }}
-              memory: {{ dig "limits" "memory" "512Mi" (.Values.resources | default dict) | quote }}
+              memory: {{ dig "limits" "memory" "2Gi" (.Values.resources | default dict) | quote }}
             requests:
               cpu: {{ dig "requests" "cpu" "100m" (.Values.resources | default dict) | quote }}
-              memory: {{ dig "requests" "memory" "256Mi" (.Values.resources | default dict) | quote }}
+              memory: {{ dig "requests" "memory" "512Mi" (.Values.resources | default dict) | quote }}
           {{- if or .Values.sloConfig.enabled .Values.output.persistence.enabled }}
           volumeMounts:
             {{- if .Values.sloConfig.enabled }}
