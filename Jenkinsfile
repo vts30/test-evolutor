@@ -77,11 +77,6 @@ pipeline {
                     helmArgs += "--set db.name=${params.DB_NAME} "
                     helmArgs += "--set db.schema=${params.DB_SCHEMA} "
                     if (params.DB_EXISTING_SECRET?.trim()) helmArgs += "--set db.existingSecret=${params.DB_EXISTING_SECRET} "
-                    // Always set resource limits — required by the sot-namespace-resources quota
-                    helmArgs += "--set resources.limits.cpu=1 "
-                    helmArgs += "--set resources.limits.memory=512Mi "
-                    helmArgs += "--set resources.requests.cpu=100m "
-                    helmArgs += "--set resources.requests.memory=256Mi "
 
                     if (params.DB_EXISTING_SECRET?.trim()) {
                         sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} | oc apply -n ${params.NAMESPACE} -f -"
