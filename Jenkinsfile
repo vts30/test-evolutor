@@ -71,11 +71,13 @@ pipeline {
                           ${dbSecretArgs}
                     """
 
+                    // helm template | oc apply avoids Helm storing release state as Secrets,
+                    // which requires list permission on secrets in the target namespace.
                     if (params.DB_EXISTING_SECRET?.trim()) {
-                        sh "helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} --namespace ${params.NAMESPACE} ${commonArgs}"
+                        sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} | oc apply -n ${params.NAMESPACE} -f -"
                     } else {
                         withCredentials([string(credentialsId: params.DB_PASSWORD_CREDENTIAL_ID, variable: 'DB_PASSWORD')]) {
-                            sh "helm upgrade --install ${RELEASE_NAME} ${CHART_PATH} --namespace ${params.NAMESPACE} ${commonArgs} --set-string db.password='${DB_PASSWORD}'"
+                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} --set-string db.password='${DB_PASSWORD}' | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
                 }
@@ -122,7 +124,10 @@ pipeline {
         always {
             sh "oc logs job/${RELEASE_NAME} -n ${params.NAMESPACE} > regression-evaluator.log 2>&1 || true"
             archiveArtifacts artifacts: 'regression-evaluator.log', allowEmptyArchive: true
-            sh "helm uninstall ${RELEASE_NAME} -n ${params.NAMESPACE} || true"
+            // Clean up all resources created by the chart (no helm uninstall needed)
+            sh "oc delete job/${RELEASE_NAME} -n ${params.NAMESPACE} --ignore-not-found || true"
+            sh "oc delete secret/${RELEASE_NAME}-db -n ${params.NAMESPACE} --ignore-not-found || true"
+            sh "oc delete configmap/${RELEASE_NAME}-slo -n ${params.NAMESPACE} --ignore-not-found || true"
         }
     }
 }
