@@ -101,6 +101,11 @@ pipeline {
                     timeout(time: 10, unit: 'MINUTES') {
                         sh """
                           set -e
+                          echo "=== Jobs in namespace ==="
+                          oc get jobs -n ${params.NAMESPACE} || true
+                          echo "=== Pods with labels ==="
+                          oc get pods -n ${params.NAMESPACE} --show-labels || true
+
                           echo "Waiting for pod to be scheduled..."
                           until POD=\$(oc get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
                             sleep 2
