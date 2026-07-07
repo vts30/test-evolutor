@@ -16,7 +16,6 @@ pipeline {
         string(name: 'DB_HOST', defaultValue: '', description: 'PostgreSQL host')
         string(name: 'DB_PORT', defaultValue: '5432', description: 'PostgreSQL port')
         string(name: 'DB_NAME', defaultValue: 'perfdb', description: 'PostgreSQL database name')
-        string(name: 'DB_USER', defaultValue: 'perfuser', description: 'PostgreSQL user')
         string(name: 'DB_SCHEMA', defaultValue: '', description: 'PostgreSQL schema (search_path). Leave blank to use the role default.')
         string(name: 'DB_EXISTING_SECRET', defaultValue: '', description: 'Name of an existing Secret in NAMESPACE holding the DB password (key: password). Leave blank to supply DB_PASSWORD_CREDENTIAL_ID instead.')
         string(name: 'DB_PASSWORD_CREDENTIAL_ID', defaultValue: '', description: 'Jenkins "Secret text" credential ID for the DB password. Ignored if DB_EXISTING_SECRET is set.')
@@ -76,7 +75,6 @@ pipeline {
                     helmArgs += "--set db.host=${params.DB_HOST} "
                     helmArgs += "--set db.port=${params.DB_PORT} "
                     helmArgs += "--set db.name=${params.DB_NAME} "
-                    helmArgs += "--set db.user=${params.DB_USER} "
                     helmArgs += "--set db.schema=${params.DB_SCHEMA} "
                     if (params.DB_EXISTING_SECRET?.trim()) helmArgs += "--set db.existingSecret=${params.DB_EXISTING_SECRET} "
                     // Always set resource limits — required by the sot-namespace-resources quota
@@ -93,7 +91,9 @@ pipeline {
                             usernameVariable: 'DB_CRED_USER',
                             passwordVariable: 'DB_PASSWORD'
                         )]) {
-                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set-string db.password=\$DB_PASSWORD | oc apply -n ${params.NAMESPACE} -f -"
+                            // Username comes from credential (same as other pipelines using PG_CREDENTIALS_ID)
+                            // Password set as PGPASSWORD env var via Secret — avoids URL special-char issues
+                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set db.user=\$DB_CRED_USER --set-string db.password=\$DB_PASSWORD | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
                     sh """

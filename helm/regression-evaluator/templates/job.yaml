@@ -52,7 +52,7 @@ spec:
           args:
             - |
               set +e
-              DB_URI="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+              DB_URI="postgresql://${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
               if [ -n "${DB_SCHEMA:-}" ]; then
                 DB_URI="${DB_URI}?options=-c%20search_path%3D${DB_SCHEMA}"
               fi
@@ -75,7 +75,7 @@ spec:
               value: {{ .Values.db.user | quote }}
             - name: DB_SCHEMA
               value: {{ .Values.db.schema | quote }}
-            - name: DB_PASSWORD
+            - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "regression-evaluator.secretName" . }}
