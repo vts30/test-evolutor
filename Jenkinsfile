@@ -138,15 +138,19 @@ pipeline {
                     }
 
                     def pod = readFile('.pod_name').trim()
-                    sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${REPORT_PATH} > perf-report.html"
-                    sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${CONTROL_DIR}/exitcode > .exitcode"
+
+                    // Read exit code first so we always know the outcome
+                    sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${CONTROL_DIR}/exitcode > .exitcode 2>&1 || echo 'unknown' > .exitcode"
+
+                    // Report may not exist if regression-evaluator failed — copy best-effort
+                    sh "oc exec ${pod} -n ${params.NAMESPACE} -- cat ${REPORT_PATH} > perf-report.html 2>&1 || true"
 
                     archiveArtifacts artifacts: 'perf-report.html', allowEmptyArchive: true
 
                     def rc = readFile('.exitcode').trim()
                     echo "regression-evaluator exit code: ${rc}"
                     if (rc != '0') {
-                        error("regression-evaluator exited with code ${rc} — check perf-report.html and regression-evaluator.log")
+                        error("regression-evaluator exited with code ${rc} — check regression-evaluator.log for the root cause")
                     }
                 }
             }
