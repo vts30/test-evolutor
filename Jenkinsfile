@@ -60,40 +60,35 @@ pipeline {
         stage('Deploy Job') {
             steps {
                 script {
-                    def valuesArgs   = params.VALUES_FILE?.trim()        ? "-f ${params.VALUES_FILE}" : ''
-                    def sloArgs      = params.ENABLE_SLO_CONFIG          ? "--set sloConfig.enabled=true --set-file sloConfig.content=${CHART_PATH}/slo.yaml" : ''
-                    def dbSecretArgs = params.DB_EXISTING_SECRET?.trim() ? "--set db.existingSecret=${params.DB_EXISTING_SECRET}" : ''
+                    // Build a flat single-line args string to avoid newline/backslash issues
+                    // when interpolating into sh "..."
+                    def helmArgs = ''
+                    if (params.VALUES_FILE?.trim())     helmArgs += "-f ${params.VALUES_FILE} "
+                    if (params.ENABLE_SLO_CONFIG)       helmArgs += "--set sloConfig.enabled=true --set-file sloConfig.content=${CHART_PATH}/slo.yaml "
+                    helmArgs += "--set image.repository=${params.IMAGE_REPOSITORY} "
+                    helmArgs += "--set image.tag=${params.IMAGE_TAG} "
+                    helmArgs += "--set job.currentRun=${params.CURRENT_RUN} "
+                    helmArgs += "--set job.baselineRun=${params.BASELINE_RUN} "
+                    helmArgs += "--set job.baselineStrategy=${params.BASELINE_STRATEGY} "
+                    helmArgs += "--set job.releaseGate=${params.RELEASE_GATE} "
+                    helmArgs += "--set job.enableClustering=${params.ENABLE_CLUSTERING} "
+                    helmArgs += "--set job.copyGraceSeconds=${params.COPY_GRACE_SECONDS} "
+                    helmArgs += "--set db.host=${params.DB_HOST} "
+                    helmArgs += "--set db.port=${params.DB_PORT} "
+                    helmArgs += "--set db.name=${params.DB_NAME} "
+                    helmArgs += "--set db.user=${params.DB_USER} "
+                    helmArgs += "--set db.schema=${params.DB_SCHEMA} "
+                    if (params.DB_EXISTING_SECRET?.trim()) helmArgs += "--set db.existingSecret=${params.DB_EXISTING_SECRET} "
 
-                    def commonArgs = """
-                          ${valuesArgs} \\
-                          ${sloArgs} \\
-                          --set image.repository=${params.IMAGE_REPOSITORY} \\
-                          --set image.tag=${params.IMAGE_TAG} \\
-                          --set job.currentRun=${params.CURRENT_RUN} \\
-                          --set job.baselineRun=${params.BASELINE_RUN} \\
-                          --set job.baselineStrategy=${params.BASELINE_STRATEGY} \\
-                          --set job.releaseGate=${params.RELEASE_GATE} \\
-                          --set job.enableClustering=${params.ENABLE_CLUSTERING} \\
-                          --set job.copyGraceSeconds=${params.COPY_GRACE_SECONDS} \\
-                          --set db.host=${params.DB_HOST} \\
-                          --set db.port=${params.DB_PORT} \\
-                          --set db.name=${params.DB_NAME} \\
-                          --set db.user=${params.DB_USER} \\
-                          --set db.schema=${params.DB_SCHEMA} \\
-                          ${dbSecretArgs}
-                    """
-
-                    // helm template | oc apply avoids Helm storing release state as Secrets,
-                    // which requires list permission on secrets in the target namespace.
                     if (params.DB_EXISTING_SECRET?.trim()) {
-                        sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} | oc apply -n ${params.NAMESPACE} -f -"
+                        sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} | oc apply -n ${params.NAMESPACE} -f -"
                     } else {
                         withCredentials([usernamePassword(
                             credentialsId: params.DB_PASSWORD_CREDENTIAL_ID,
                             usernameVariable: 'DB_CRED_USER',
                             passwordVariable: 'DB_PASSWORD'
                         )]) {
-                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${commonArgs} --set-string db.password='${DB_PASSWORD}' | oc apply -n ${params.NAMESPACE} -f -"
+                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set-string db.password='\${DB_PASSWORD}' | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
                 }
