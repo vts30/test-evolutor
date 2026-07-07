@@ -116,13 +116,13 @@ pipeline {
                           echo "=== Resource quota ==="
                           oc describe resourcequota -n ${params.NAMESPACE} || true
 
-                          echo "Waiting for pod to be scheduled..."
+                          echo "Waiting for pod to be scheduled (prefix: ${RELEASE_NAME})..."
                           RETRIES=0
-                          until POD=\$(oc get pods -n ${params.NAMESPACE} -l job-name=${RELEASE_NAME} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [ -n "\$POD" ]; do
+                          until POD=\$(oc get pods -n ${params.NAMESPACE} --no-headers 2>/dev/null | grep "^${RELEASE_NAME}" | awk '{print \$1}' | head -1) && [ -n "\$POD" ]; do
                             RETRIES=\$((RETRIES+1))
                             if [ \$RETRIES -ge 30 ]; then
                               echo "ERROR: pod not found after 30 retries. Current pods:"
-                              oc get pods -n ${params.NAMESPACE} --show-labels || true
+                              oc get pods -n ${params.NAMESPACE} || true
                               exit 1
                             fi
                             sleep 5
