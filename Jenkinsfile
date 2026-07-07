@@ -28,7 +28,7 @@ pipeline {
 
     environment {
         RELEASE_NAME = "regression-evaluator-${env.BUILD_NUMBER}"
-        CHART_PATH   = "helm/regression-evaluator"
+        CHART_PATH   = "."
         REPORT_PATH  = "/tmp/perf-report.html"
         CONTROL_DIR  = "/tmp"
     }
