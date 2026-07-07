@@ -91,6 +91,10 @@ pipeline {
                             sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set-string db.password=\$DB_PASSWORD | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
+                    sh """
+                      echo "=== Resources created in ${params.NAMESPACE} ==="
+                      oc get job,secret,configmap -n ${params.NAMESPACE} | grep ${RELEASE_NAME} || echo "WARNING: no resources found matching ${RELEASE_NAME}"
+                    """
                 }
             }
         }
