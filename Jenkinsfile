@@ -39,6 +39,18 @@ pipeline {
             }
         }
 
+        stage('Check Tools') {
+            steps {
+                sh '''
+                  echo "=== oc ===" && oc version || echo "oc not found"
+                  echo "=== podman ===" && podman --version || echo "podman not found"
+                  echo "=== helm ===" && helm version || echo "helm not found"
+                  echo "=== whoami ===" && whoami
+                  echo "=== namespace ===" && cat /var/run/secrets/kubernetes.io/serviceaccount/namespace
+                '''
+            }
+        }
+
         stage('Helm Lint') {
             steps {
                 sh "helm lint ${CHART_PATH}"
