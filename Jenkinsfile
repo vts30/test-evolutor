@@ -88,7 +88,7 @@ pipeline {
                             usernameVariable: 'DB_CRED_USER',
                             passwordVariable: 'DB_PASSWORD'
                         )]) {
-                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set-string db.password='\${DB_PASSWORD}' | oc apply -n ${params.NAMESPACE} -f -"
+                            sh "helm template ${RELEASE_NAME} ${CHART_PATH} ${helmArgs} --set-string db.password=\$DB_PASSWORD | oc apply -n ${params.NAMESPACE} -f -"
                         }
                     }
                 }
