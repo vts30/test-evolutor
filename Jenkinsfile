@@ -144,7 +144,12 @@ pipeline {
 
                     def rc = readFile('.exitcode').trim()
                     echo "regression-evaluator exit code: ${rc}"
-                    if (rc != '0') {
+                    if (rc == '2') {
+                        error("regression-evaluator: BLOCK — regression detected, release gate failed")
+                    } else if (rc == '3') {
+                        currentBuild.result = 'UNSTABLE'
+                        echo "regression-evaluator: HOLD — uncertain verdict, check perf-report.html"
+                    } else if (rc != '0') {
                         error("regression-evaluator exited with code ${rc} — check regression-evaluator.log for the root cause")
                     }
                 }
